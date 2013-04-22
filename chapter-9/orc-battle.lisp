@@ -49,6 +49,13 @@
   (princ ", and a strength of ")
   (princ (player-strength player)))
 
+(defun replace-monster (monster monster-number (state game-state))
+	(let ((player (game-state-player state))
+		  (monsters (game-state-monsters state)))
+;TODO: Can I do this without setf?
+		(setf (aref monsters monster-number) monster)
+		(make-game-state :player player :monsters monsters)))
+
 
 ;MONSTERS
 
@@ -110,8 +117,8 @@
         (random-monster monsters)
       m)))
 
-;TODO: Instead of decf, return a new monster object with x less health
-(defmethod monster-hit (m x)
+;TODO: Instead of decf, return a new game-state object that includes the monster with less health
+(defmethod monster-hit (m x (state game-state))
   (decf (monster-health m) x)
   (if (monster-dead m)
       (progn (princ "You killed the ")
@@ -123,8 +130,8 @@
            (princ x)
            (princ " health points! "))))
 
-;TODO: Instead of decf, return a new monster object with x less health
-(defmethod monster-hit ((m hydra) x)
+;TODO: Instead of decf, return a new game-state object that includes the monster with less health
+(defmethod monster-hit ((m hydra) x (state game-state))
   (decf (monster-health m) x)
   (if (monster-dead m)
       (princ "The corpse of the fully decapitated and decapacitated hydra falls to the floor!")
@@ -152,8 +159,10 @@
 		(fresh-line)
 		(princ "Attack style: [s]tab [d]ouble swing [r]oundhouse:")
 		(case (read)
+;
 			(s (monster-hit (pick-monster monsters)
-							(+ 2 (randval (ash (player-strength player) -1)))))
+							(+ 2 (randval (ash (player-strength player) -1))) state))
+;
 			(d (let ((x (randval (truncate (/ (player-strength player) 6)))))
 				(princ "Your double swing has a strength of ")
 				(princ x)
@@ -161,6 +170,7 @@
 				(monster-hit (pick-monster monsters) x)
 				(unless (monsters-dead monsters)
 						(monster-hit (pick-monster monsters) x))))
+;
 			(otherwise (dotimes (x (1+ (randval (truncate (/ (player-strength player) 3)))))
 				(unless (monsters-dead monsters)
 						(monster-hit (random-monster monsters) 1)))))))
