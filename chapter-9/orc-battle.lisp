@@ -1,11 +1,13 @@
 
+;PLAYER
+
 (defstruct player
 	health
 	agility
 	strength)
 
 (defun player-move-count (player)
-	(k (1+ (truncate (/ (max 0 (player-agility player)) 15)))))
+	(1+ (truncate (/ (max 0 (player-agility player)) 15))))
 
 
 (defun init-monsters (monster-num)
@@ -18,23 +20,16 @@
 (defun orc-battle (monster-num)
 	(let* ((monsters (init-monsters monster-num))
 		   (player (make-player :health 30 :agility 30 :strength 30))
-		   (won (game-loop player monsters)))
+		   (won (game-loop (make-game-state :player player :monsters monsters))))
 		(cond (won (fresh-line) (princ "Congratulations! You have vanquished all of your foes."))
 			  (t (fresh-line) (princ "You have been killed. Game over.")))))
 
-(defun game-loop (player monsters)
-	(cond ((player-dead player)
-		   nil)
-		  ((monsters-dead monsters)
-		   'you-win)
-		  (t
-		   (show-player player)
-;TODO: The following line needs to "mutate" the player... functionally.
-(game-loop (monsters-move (player-move player monsters (player-move-count player))))
-		   (player-move player monsters (player-move-count player)))))
 
-(defun player-move (player monsters moves)
-	)
+;GAME STATE
+
+(defstruct game-state
+	player
+	monsters)
 
 (defun player-dead (player)
   (<= (player-health player) 0))
@@ -55,67 +50,37 @@
   (princ (player-strength player)))
 
 
+;MONSTERS
 
+(defstruct monster (health (randval 10)))
 
+(defstruct (brigand (:include monster)))
 
+(defmethod monster-show (m)
+  (princ "A fierce ")
+  (princ (type-of m)))
 
+(defstruct (orc (:include monster)) (club-level (randval 8)))
 
-(defun game-loop1 ()
-  (unless (or (player-dead) (monsters-dead))
-;    (show-player)
-    (dotimes (player-move-count)
-      (unless (monsters-dead)
-        (show-monsters)
-        (player-attack)))
-    (fresh-line)
-    (map 'list
-         (lambda(m)
-           (or (monster-dead m) (monster-attack m)))
-         *monsters*)
-    (game-loop)))
+(defmethod monster-show ((m orc))
+  (princ "A wicked orc with a level ")
+  (princ (orc-club-level m))
+  (princ " club"))
 
+(defstruct (hydra (:include monster)))
 
+(defmethod monster-show ((m hydra))
+  (princ "A malicious hydra with ")
+  (princ (monster-health m))
+  (princ " heads."))
 
-(defun player-attack ()
-  (fresh-line)
-  (princ "Attack style: [s]tab [d]ouble swing [r]oundhouse:")
-  (case (read)
-    (s (monster-hit (pick-monster)
-                    (+ 2 (randval (ash *player-strength* -1)))))
-    (d (let ((x (randval (truncate (/ *player-strength* 6)))))
-         (princ "Your double swing has a strength of ")
-         (princ x)
-         (fresh-line)
-         (monster-hit (pick-monster) x)
-         (unless (monsters-dead)
-           (monster-hit (pick-monster) x))))
-    (otherwise (dotimes (x (1+ (randval (truncate (/ *player-strength* 3)))))
-                 (unless (monsters-dead)
-                   (monster-hit (random-monster) 1))))))
+(defstruct (slime-mold (:include monster)) (sliminess (randval 5)))
 
-(defun randval (n)
-  (1+ (random (max 1 n))))
+(defmethod monster-show ((m slime-mold))
+  (princ "A slime mold with a sliminess of ")
+  (princ (slime-mold-sliminess m)))
 
-(defun random-monster ()
-  (let ((m (aref *monsters* (random (length *monsters*)))))
-    (if (monster-dead m)
-        (random-monster)
-      m)))
-
-(defun pick-monster ()
-  (fresh-line)
-  (princ "Monster #:")
-  (let ((x (read)))
-    (if (not (and (integerp x) (>= x 1) (<= x *monster-num*)))
-        (progn (princ "That is not a valid monster number.")
-               (pick-monster))
-      (let ((m (aref *monsters* (1- x))))
-        (if (monster-dead m)
-            (progn (princ "That monster is alread dead.")
-                   (pick-monster))
-          m)))))
-
-(defun show-monsters ()
+(defun show-monsters (monsters)
   (fresh-line)
   (princ "Your foes:")
   (let ((x 0))
@@ -131,10 +96,21 @@
                     (princ (monster-health m))
                     (princ ") ")
                     (monster-show m))))
-         *monsters*)))
+         monsters)))
 
-(defstruct monster (health (randval 10)))
 
+;GAMEPLAY
+
+(defun randval (n)
+  (1+ (random (max 1 n))))
+
+(defun random-monster (monsters)
+  (let ((m (aref monsters (random (length monsters)))))
+    (if (monster-dead m)
+        (random-monster monsters)
+      m)))
+
+;TODO: Instead of decf, return a new monster object with x less health
 (defmethod monster-hit (m x)
   (decf (monster-health m) x)
   (if (monster-dead m)
@@ -147,18 +123,95 @@
            (princ x)
            (princ " health points! "))))
 
-(defmethod monster-show (m)
-  (princ "A fierce ")
-  (princ (type-of m)))
+;TODO: Instead of decf, return a new monster object with x less health
+(defmethod monster-hit ((m hydra) x)
+  (decf (monster-health m) x)
+  (if (monster-dead m)
+      (princ "The corpse of the fully decapitated and decapacitated hydra falls to the floor!")
+    (progn (princ "You lop off ")
+           (princ x)
+           (princ " of the hydra's heads! "))))
+
+(defun pick-monster (monsters)
+  (fresh-line)
+  (princ "Monster #:")
+  (let ((x (read)))
+    (if (not (and (integerp x) (>= x 1) (<= x (length monsters))))
+        (progn (princ "That is not a valid monster number.")
+               (pick-monster monsters))
+      (let ((m (aref monsters (1- x))))
+        (if (monster-dead m)
+            (progn (princ "That monster is alread dead.")
+                   (pick-monster monsters))
+          m)))))
+
+;TODO: Must return a game-state
+(defun player-attack ((state game-state))
+	(let ((player (game-state-player state))
+		  (monsters (game-state-monsters state)))
+		(fresh-line)
+		(princ "Attack style: [s]tab [d]ouble swing [r]oundhouse:")
+		(case (read)
+			(s (monster-hit (pick-monster monsters)
+							(+ 2 (randval (ash (player-strength player) -1)))))
+			(d (let ((x (randval (truncate (/ (player-strength player) 6)))))
+				(princ "Your double swing has a strength of ")
+				(princ x)
+				(fresh-line)
+				(monster-hit (pick-monster monsters) x)
+				(unless (monsters-dead monsters)
+						(monster-hit (pick-monster monsters) x))))
+			(otherwise (dotimes (x (1+ (randval (truncate (/ (player-strength player) 3)))))
+				(unless (monsters-dead monsters)
+						(monster-hit (random-monster monsters) 1)))))))
+
+(defun player-move ((state game-state) move-count)
+	(let ((player (game-state-player state))
+		  (monsters (game-state-monsters state)))
+		(cond ((monsters-dead monsters) state)
+			  (t (show-monsters monsters)
+			  	 (player-attack state)))))
+
+;TODO: MUST RETURN A game-state
+(defun monsters-move ((state game-state))
+	state)
+
+(defun game-loop ((state game-state))
+	(let ((player (game-state-player state))
+		  (monsters (game-state-monsters state)))
+		(cond ((player-dead player)
+			   nil)
+			  ((monsters-dead monsters)
+			   'you-win)
+			  (t
+			   (show-player player)
+			   (game-loop (monsters-move (player-move state (player-move-count player))))))))
+
+
+
+
+
+
+
+(defun game-loop1 ()
+  (unless (or (player-dead) (monsters-dead))
+;    (show-player)
+    (dotimes (k (player-move-count *player*))
+      (unless (monsters-dead)
+        (show-monsters)
+        (player-attack)))
+    (fresh-line)
+    (map 'list
+         (lambda(m)
+           (or (monster-dead m) (monster-attack m)))
+         *monsters*)
+    (game-loop)))
+
+
+
+
 
 (defmethod monster-attack (m))
-
-(defstruct (orc (:include monster)) (club-level (randval 8)))
-
-(defmethod monster-show ((m orc))
-  (princ "A wicked orc with a level ")
-  (princ (orc-club-level m))
-  (princ " club"))
 
 (defmethod monster-attack ((m orc))
   (let ((x (randval (orc-club-level m))))
@@ -167,22 +220,6 @@
     (princ " of your health points. ")
     (decf *player-health* x)))
 
-(defstruct (hydra (:include monster)))
-
-(defmethod monster-show ((m hydra))
-  (princ "A malicious hydra with ")
-  (princ (monster-health m))
-  (princ " heads."))
-
-(defmethod monster-hit ((m hydra) x)
-  (decf (monster-health m) x)
-  (if (monster-dead m)
-      (princ "The corpse of the fully decapitated and decapacitated hydra
-falls to the floor!")
-    (progn (princ "You lop off ")
-           (princ x)
-           (princ " of the hydra's heads! "))))
-
 (defmethod monster-attack ((m hydra))
   (let ((x (randval (ash (monster-health m) -1))))
     (princ "A hydra attacks you with ")
@@ -190,12 +227,6 @@ falls to the floor!")
     (princ " of its heads! It also grows back one more head! ")
     (incf (monster-health m))
     (decf *player-health* x)))
-
-(defstruct (slime-mold (:include monster)) (sliminess (randval 5)))
-
-(defmethod monster-show ((m slime-mold))
-  (princ "A slime mold with a sliminess of ")
-  (princ (slime-mold-sliminess m)))
 
 (defmethod monster-attack ((m slime-mold))
   (let ((x (randval (slime-mold-sliminess m))))
@@ -207,8 +238,6 @@ by ")
     (when (zerop (random 2))
       (princ "It also squirts in your face, taking away a health point! ")
       (decf *player-health*))))
-
-(defstruct (brigand (:include monster)))
 
 (defmethod monster-attack ((m brigand))
   (let ((x (max *player-health* *player-agility* *player-strength*)))
